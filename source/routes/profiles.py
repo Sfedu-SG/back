@@ -1,5 +1,6 @@
 from source.models.users import UsersTable
 from source.models.profiles import ProfilesTable
+from source.utils.put import update_attr
 from config import api, db
 
 from flask_restful import Resource
@@ -8,13 +9,12 @@ from flask_jwt_extended import jwt_required
 
 import datetime
 
-# crud realization
+
 class Profiles(Resource):
     @jwt_required()
     def get(self):
         page = request.args.get('page', default=1, type=int)
         per_page = request.args.get('per_page', default=10, type=int)
-
 
         max_per_page = 100
 
@@ -48,7 +48,6 @@ class Profiles(Resource):
         except ValueError:
             return make_response({"message": "Invalid date format for birthday"}, 400)
 
-
         new_profile = ProfilesTable(
             name=data.get("name"),
             lastname=data.get("lastname"),
@@ -62,6 +61,17 @@ class Profiles(Resource):
 
         return make_response({"message": "Profile created"}, 201)
 
+api.add_resource(Profiles, "/profiles/")
+
+# crud realization
+class ProfileUser(Resource):
+    @jwt_required()
+    def get(self, id=0):
+        profile = ProfilesTable.query.get(id)
+        if profile is None:
+            return make_response({"message": "Profile not found"}, 404)
+        return profile.serialize()
+
     @jwt_required()
     def put(self, id):
         data = request.get_json()
@@ -70,17 +80,10 @@ class Profiles(Resource):
         new_value = data.get('new_value')
 
         profile = ProfilesTable.query.get(id)
-
         if profile is None:
             return {"message": f"Profile with id {id} not found"}, 404
 
-        if not hasattr(ProfilesTable, field_to_update):
-            return make_response({"message": "Invalid field to update"}, 400)
-
-        setattr(profile, field_to_update, new_value)
-        db.session.commit()
-
-        return make_response({"message": f"{field_to_update} updated successfully"}, 200)
+        return update_attr(ProfilesTable, profile, field_to_update, new_value)
 
     @jwt_required()
     def delete(self, id):
@@ -94,4 +97,4 @@ class Profiles(Resource):
 
         return make_response({"message": "Profile deleted successfully"}, 200)
 
-api.add_resource(Profiles, "/profiles/<int:id>")
+api.add_resource(ProfileUser, "/profiles/<int:id>")

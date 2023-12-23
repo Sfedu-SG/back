@@ -8,7 +8,7 @@ class UsersTable(db.Model):
     def serialize(self):
         return {
         "id": self.id,
-        "login": self.id
+        "login": self.login
         }
 
 with app.app_context():
