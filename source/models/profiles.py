@@ -8,3 +8,6 @@ class ProfilesTable(db.Model):
     birthday = db.Column(db.Date, nullable=False)
     last_edit = db.Column(db.Date)
 
+
+with app.app_context():
+    db.create_all()
