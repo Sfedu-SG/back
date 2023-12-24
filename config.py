@@ -3,6 +3,8 @@ from flask_restful import Api
 from flask_jwt_extended import JWTManager
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
+from flask_cors import CORS
+
 from datetime import timedelta
 
 import os
@@ -19,4 +21,4 @@ db = SQLAlchemy(app)
 api = Api(app)
 jwt = JWTManager(app)
 bcrypt = Bcrypt(app)
-
+CORS(app)
