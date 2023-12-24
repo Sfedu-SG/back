@@ -3,12 +3,19 @@ from source.models.profiles import ProfilesTable
 from source.models.files import FilesTable
 from source.utils.put import update_attr
 from config import api, db
+from anon.anon_pdf import anonymize_document
 
 from flask_restful import Resource
 from flask import request, make_response
 from flask_jwt_extended import jwt_required
 
+import os
 
+UPLOAD_FOLDER = os.path.join("anon", "files_incognito")
+ALLOWED_EXTENSIONS = {'docx'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 class Files(Resource):
     @jwt_required()
@@ -38,22 +45,43 @@ class Files(Resource):
 
     @jwt_required()
     def post(self, user_id):
-        if "name" not in request.json or "path" not in request.json:
-            return make_response({"message": "Missing required fields"}, 400)
 
-        data = request.get_json()
-        new_file = FilesTable(
-            user_id=user_id,
-            name=data.get("name"),
-            path=data.get("path"),
-        )
+        # Проверяем, что файл был отправлен
+        if 'file' not in request.files:
+            return make_response({"message": "No file part"}, 400)
 
-        db.session.add(new_file)
-        db.session.commit()
+        file = request.files['file']
 
-        return make_response({"message": "File created"}, 201)
+        # Получаем последний file_id
+        last_file = FilesTable.query.order_by(FilesTable.id.desc()).first()
+        # Извлекаем последний file_id или устанавливаем его в 0, если таблица пуста
+        last_file_id = last_file.id + 1 if last_file else 0
 
-api.add_resource(Files, "/profiles/<int:id>/files")
+        # Проверяем, что файл имеет разрешенное расширение
+        if file and allowed_file(file.filename):
+            # Генерируем безопасное имя файла
+            filename = f"{user_id}_{f'{last_file_id}'}.docx"  # Имя файла из user_id и file_id
+
+            # Сохраняем файл в указанной директории
+            file.save(os.path.join(UPLOAD_FOLDER, filename))
+
+            new_file = FilesTable(
+                user_id=user_id,
+                name=filename,
+                path=os.path.join(UPLOAD_FOLDER, filename),
+            )
+
+            db.session.add(new_file)
+            db.session.commit()
+
+            # Здесь вы можете вызвать свой скрипт для обработки файла
+            anonymize_document(UPLOAD_FOLDER + "\\" + filename)
+
+            return make_response({"message": "File created"}, 201)
+        else:
+            return make_response({"message": "Invalid file"}, 400)
+
+api.add_resource(Files, "/profiles/<int:user_id>/files")
 
 class FileOne(Resource):
     @jwt_required()
