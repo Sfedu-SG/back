@@ -4,6 +4,7 @@ from source.models.files import FilesTable
 from source.utils.put import update_attr
 from config import api, db
 from anon.anon_pdf import anonymize_document
+from anon.anon_photo import process_image
 
 from flask_restful import Resource
 from flask import request, make_response
@@ -12,7 +13,7 @@ from flask_jwt_extended import jwt_required
 import os
 
 UPLOAD_FOLDER = os.path.join("anon", "files_incognito")
-ALLOWED_EXTENSIONS = {'docx'}
+ALLOWED_EXTENSIONS = {'docx', "jpg", "jpeg", "png"}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -46,23 +47,18 @@ class Files(Resource):
     @jwt_required()
     def post(self, user_id):
 
-        # Проверяем, что файл был отправлен
         if 'file' not in request.files:
             return make_response({"message": "No file part"}, 400)
 
         file = request.files['file']
 
-        # Получаем последний file_id
         last_file = FilesTable.query.order_by(FilesTable.id.desc()).first()
-        # Извлекаем последний file_id или устанавливаем его в 0, если таблица пуста
         last_file_id = last_file.id + 1 if last_file else 0
 
-        # Проверяем, что файл имеет разрешенное расширение
         if file and allowed_file(file.filename):
-            # Генерируем безопасное имя файла
-            filename = f"{user_id}_{f'{last_file_id}'}.docx"  # Имя файла из user_id и file_id
+            filename = f"{user_id}_{f'{last_file_id}'}.{file.filename.rsplit('.', 1)[1].lower()}" 
+            file_extension = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
 
-            # Сохраняем файл в указанной директории
             file.save(os.path.join(UPLOAD_FOLDER, filename))
 
             new_file = FilesTable(
@@ -74,9 +70,12 @@ class Files(Resource):
             db.session.add(new_file)
             db.session.commit()
 
-            # Здесь вы можете вызвать свой скрипт для обработки файла
-            anonymize_document(UPLOAD_FOLDER + "\\" + filename)
-
+            if file_extension == 'docx':
+                anonymize_document(os.path.join(UPLOAD_FOLDER, filename))
+            elif file_extension in ['jpg', 'jpeg', 'png']:
+                process_image(os.path.join(UPLOAD_FOLDER, filename))
+            else:
+                return make_response({"message": "Invalid file type"}, 400)
             return make_response({"message": "File created"}, 201)
         else:
             return make_response({"message": "Invalid file"}, 400)
@@ -92,28 +91,32 @@ class FileOne(Resource):
         return file.serialize()
 
     @jwt_required()
-    def put(self, user_id, file_id):
-        if "name" not in request.json or "path" not in request.json:
-            return make_response({"message": "Missing required fields"}, 400)
-
-        data = request.get_json()
+    def get(self, user_id, file_id):
         file = FilesTable.query.filter_by(id=file_id, user_id=user_id).first()
+        if file is None:
+            return make_response({"message": "File not found"}, 404)
 
-        field_to_update = data.get("field_to_update")
-        new_value = data.get("new_value")
-
-        if not hasattr(ProfilesTable, field_to_update):
-            return make_response({"message": "Invalid field to update"}, 400)
-
-        return update_attr(FilesTable, file, field_to_update, new_value)
-
+        # Возвращаем информацию о файле в формате JSON
+        return file.serialize()
+    
     @jwt_required()    
     def delete(self, user_id, file_id):
         file = FilesTable.query.filter_by(id=file_id, user_id=user_id).first()
         if file is None:
             return make_response({"message": "File not found"}, 404)
+
+        # Получаем путь к файлу
+        file_path = file.path
+
+        # Проверяем, существует ли файл
+        if os.path.exists(file_path):
+            # Удаляем файл из директории
+            os.remove(file_path)
+
+        # Удаляем запись из базы данных
         db.session.delete(file)
         db.session.commit()
+
         return make_response({"message": "File deleted successfully"}, 200)
     
 

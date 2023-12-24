@@ -10,7 +10,7 @@ class FilesTable(db.Model):
         return {
         "id": self.id,
         "name": self.name,
-        "path": self.path
+        "path": self.path,
         }
 
 with app.app_context():
